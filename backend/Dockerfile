@@ -1,53 +1,43 @@
-# Multi-stage Dockerfile for MediaVault Backend
-# Stage 1: Build the Encore application
-FROM golang:1.24-bookworm AS builder
+# Dockerfile for MediaVault Backend
+# This is a runtime-only Dockerfile - the binary is built by Encore CLI externally
+# Use this with: encore build docker ghcr.io/owner/repo/mediavault-backend:tag --base debian:bookworm-slim
 
-# Install Encore CLI
-RUN curl -L https://encore.dev/install.sh | bash
-ENV PATH="/root/.encore/bin:${PATH}"
+FROM debian:bookworm-slim
 
-# Set working directory
-WORKDIR /app
-
-# Copy go mod files first for better caching
-COPY go.mod go.sum ./
-
-# Download dependencies
-RUN go mod download
-
-# Copy the entire backend source
-COPY . .
-
-# Build the Encore application
-# Note: For self-hosted deployments, we use `encore build docker`
-RUN encore build docker --base-image=debian:bookworm-slim mediavault
-
-# Stage 2: Production runtime
-FROM debian:bookworm-slim AS runtime
+LABEL org.opencontainers.image.source="https://github.com/hitomihiumi/surtr-media"
+LABEL org.opencontainers.image.description="MediaVault Backend Service"
+LABEL org.opencontainers.image.licenses="MIT"
 
 # Install runtime dependencies including FFMPEG for processing service
-RUN apt-get update && apt-get install -y \
+RUN apt-get update && apt-get install -y --no-install-recommends \
     ffmpeg \
     libx265-dev \
     ca-certificates \
     curl \
-    && rm -rf /var/lib/apt/lists/*
+    && rm -rf /var/lib/apt/lists/* \
+    && apt-get clean
+
+# Verify FFMPEG installation
+RUN ffmpeg -version && ffmpeg -encoders 2>/dev/null | grep libx265
 
 # Create non-root user
-RUN useradd -m -s /bin/bash appuser
+RUN groupadd --gid 1000 appgroup && \
+    useradd --uid 1000 --gid appgroup --shell /bin/bash --create-home appuser
+
+# Create temp directory for processing
+RUN mkdir -p /tmp/processing && \
+    chown -R appuser:appgroup /tmp/processing
 
 # Set working directory
 WORKDIR /app
 
-# Copy built application from builder
-# Note: Adjust this path based on Encore's output
-COPY --from=builder /app/.encore/build/docker/mediavault /app/
+# The application binary and migrations will be added by Encore's build process
+# This Dockerfile serves as documentation and for building a custom base image
 
-# Change ownership to non-root user
-RUN chown -R appuser:appuser /app
-
-# Switch to non-root user
-USER appuser
+# Environment variables
+ENV FFMPEG_BINARY=/usr/bin/ffmpeg
+ENV FFPROBE_BINARY=/usr/bin/ffprobe
+ENV TEMP_DIR=/tmp/processing
 
 # Expose default Encore port
 EXPOSE 4000
@@ -55,7 +45,3 @@ EXPOSE 4000
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
     CMD curl -f http://localhost:4000/healthz || exit 1
-
-# Default command
-CMD ["./mediavault"]
-

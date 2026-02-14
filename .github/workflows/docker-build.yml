@@ -26,11 +26,14 @@ env:
   IMAGE_NAME: ${{ github.repository }}/mediavault-backend
 
 jobs:
-  build-and-push:
+  # First, build and push the custom base image with FFMPEG
+  build-base-image:
     runs-on: ubuntu-latest
     permissions:
       contents: read
       packages: write
+    outputs:
+      base_image: ${{ steps.base-meta.outputs.tags }}
 
     steps:
       - name: Checkout repository
@@ -47,39 +50,103 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Extract metadata (tags, labels)
-        id: meta
+      - name: Extract metadata for base image
+        id: base-meta
         uses: docker/metadata-action@v5
         with:
-          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          images: ${{ env.REGISTRY }}/${{ github.repository }}/mediavault-base
           tags: |
-            type=ref,event=branch
-            type=ref,event=pr
-            type=sha,prefix=
-            type=raw,value=latest,enable={{is_default_branch}}
-            type=raw,value=${{ github.event.inputs.tag }},enable=${{ github.event.inputs.tag != '' }}
+            type=raw,value=latest
 
-      - name: Build and push Docker image
+      - name: Build and push base image with FFMPEG
         uses: docker/build-push-action@v5
         with:
           context: ./backend
           file: ./backend/Dockerfile
           push: ${{ github.event_name != 'pull_request' }}
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-          platforms: linux/amd64,linux/arm64
+          tags: ${{ steps.base-meta.outputs.tags }}
+          labels: ${{ steps.base-meta.outputs.labels }}
+          cache-from: type=gha,scope=base
+          cache-to: type=gha,mode=max,scope=base
+          platforms: linux/amd64
 
-      - name: Generate artifact attestation
-        if: github.event_name != 'pull_request'
-        uses: actions/attest-build-provenance@v1
+  # Build backend using Encore CLI
+  build-and-push:
+    runs-on: ubuntu-latest
+    needs: build-base-image
+    if: github.event_name != 'pull_request'
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
         with:
-          subject-name: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
-          subject-digest: ${{ steps.build-and-push.outputs.digest }}
-          push-to-registry: true
+          go-version: '1.24'
+          cache-dependency-path: backend/go.sum
 
-  # Build processing service with FFMPEG
+      - name: Install Encore CLI
+        run: |
+          curl -L https://encore.dev/install.sh | bash
+          echo "$HOME/.encore/bin" >> $GITHUB_PATH
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Generate image tags
+        id: tags
+        run: |
+          SHA_SHORT=$(echo ${{ github.sha }} | cut -c1-7)
+          BRANCH_NAME=${GITHUB_REF##*/}
+          
+          echo "sha_tag=$SHA_SHORT" >> $GITHUB_OUTPUT
+          echo "branch_tag=$BRANCH_NAME" >> $GITHUB_OUTPUT
+          
+          if [ "${{ github.event.inputs.tag }}" != "" ]; then
+            echo "custom_tag=${{ github.event.inputs.tag }}" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Build and push Docker image with Encore
+        working-directory: ./backend
+        run: |
+          BASE_IMAGE="${{ env.REGISTRY }}/${{ github.repository }}/mediavault-base:latest"
+          IMAGE_TAG="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.tags.outputs.sha_tag }}"
+          
+          # Build with Encore CLI
+          encore build docker "$IMAGE_TAG" --base "$BASE_IMAGE" --push
+          
+          # Tag additional versions
+          docker pull "$IMAGE_TAG"
+          
+          # Tag with branch name
+          docker tag "$IMAGE_TAG" "${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.tags.outputs.branch_tag }}"
+          docker push "${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.tags.outputs.branch_tag }}"
+          
+          # Tag as latest if on main/master
+          if [ "${{ steps.tags.outputs.branch_tag }}" == "main" ] || [ "${{ steps.tags.outputs.branch_tag }}" == "master" ]; then
+            docker tag "$IMAGE_TAG" "${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest"
+            docker push "${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest"
+          fi
+          
+          # Tag with custom tag if provided
+          if [ "${{ steps.tags.outputs.custom_tag }}" != "" ]; then
+            docker tag "$IMAGE_TAG" "${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.tags.outputs.custom_tag }}"
+            docker push "${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.tags.outputs.custom_tag }}"
+          fi
+
+      - name: Output image digest
+        run: |
+          echo "Image pushed: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.tags.outputs.sha_tag }}"
+
+  # Build processing service base image (same as main, kept for compatibility)
   build-processing:
     runs-on: ubuntu-latest
     permissions:
@@ -111,7 +178,6 @@ jobs:
             type=ref,event=pr
             type=sha,prefix=
             type=raw,value=latest,enable={{is_default_branch}}
-            type=raw,value=${{ github.event.inputs.tag }},enable=${{ github.event.inputs.tag != '' }}
 
       - name: Build and push Processing Docker image
         uses: docker/build-push-action@v5
@@ -121,6 +187,6 @@ jobs:
           push: ${{ github.event_name != 'pull_request' }}
           tags: ${{ steps.meta-processing.outputs.tags }}
           labels: ${{ steps.meta-processing.outputs.labels }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-          platforms: linux/amd64,linux/arm64
+          cache-from: type=gha,scope=processing
+          cache-to: type=gha,mode=max,scope=processing
+          platforms: linux/amd64
