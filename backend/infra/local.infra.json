@@ -43,7 +43,7 @@
   "pubsub": [
     {
       "type": "nsq",
-      "hosts": ["localhost:4150"]
+      "hosts": "localhost:4150"
     }
   ],
 

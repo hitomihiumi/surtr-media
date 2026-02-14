@@ -43,7 +43,7 @@
   "pubsub": [
     {
       "type": "nsq",
-      "hosts": [{"$env": "NSQ_HOSTS"}]
+      "hosts": {"$env": "NSQ_HOSTS"}
     }
   ],
 
