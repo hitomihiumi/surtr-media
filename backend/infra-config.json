@@ -9,7 +9,7 @@
 
   "sql_servers": [
     {
-      "host": {"$env": "POSTGRES_HOST"}
+      "host": "postgres:5432"
     }
   ],
 
