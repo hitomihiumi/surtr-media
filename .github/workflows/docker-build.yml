@@ -120,8 +120,8 @@ jobs:
           BASE_IMAGE="${{ env.REGISTRY }}/${{ github.repository }}/mediavault-base:latest"
           IMAGE_TAG="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.tags.outputs.sha_tag }}"
           
-          # Build with Encore CLI
-          encore build docker "$IMAGE_TAG" --base "$BASE_IMAGE" --push
+          # Build with Encore CLI using infra config
+          encore build docker "$IMAGE_TAG" --base "$BASE_IMAGE" --config ./infra/production.infra.json --push
           
           # Tag additional versions
           docker pull "$IMAGE_TAG"

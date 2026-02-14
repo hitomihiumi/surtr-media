@@ -9,10 +9,7 @@
 
   "sql_servers": [
     {
-      "host": "localhost:5432",
-      "tls_config": {
-        "disabled": true
-      }
+      "host": "localhost:5432"
     }
   ],
 
@@ -46,82 +43,22 @@
   "pubsub": [
     {
       "type": "nsq",
-      "host": "localhost:4150"
+      "hosts": ["localhost:4150"]
     }
   ],
 
   "pubsub_topics": {
     "media-uploaded": {
       "provider_id": 0,
-      "name": "media-uploaded",
       "subscriptions": {
         "processing-worker": {}
       }
     }
   },
 
-  "redis_servers": [],
-
   "secrets": {
     "DiscordClientID": {"$env": "DISCORD_CLIENT_ID"},
     "DiscordClientSecret": {"$env": "DISCORD_CLIENT_SECRET"},
     "SessionSecret": {"$env": "SESSION_SECRET"}
-  },
-
-  "service_configs": {
-    "auth": {
-      "env": {
-        "DISCORD_REDIRECT_URL": "http://localhost:4000/auth/discord/callback"
-      }
-    },
-    "media": {
-      "env": {
-        "S3_ENDPOINT": "localhost:9000",
-        "S3_ACCESS_KEY": "minioadmin",
-        "S3_SECRET_KEY": "minioadmin",
-        "S3_BUCKET": "media-vault",
-        "S3_USE_SSL": "false"
-      }
-    },
-    "processing": {
-      "env": {
-        "S3_ENDPOINT": "localhost:9000",
-        "S3_ACCESS_KEY": "minioadmin",
-        "S3_SECRET_KEY": "minioadmin",
-        "S3_BUCKET": "media-vault",
-        "S3_USE_SSL": "false"
-      }
-    },
-    "collection": {}
-  },
-
-  "gateways": {
-    "api-gateway": {
-      "base_url": "http://localhost:4000",
-      "cors": {
-        "allow_origins_without_credentials": ["*"],
-        "allow_origins_with_credentials": ["http://localhost:3000"],
-        "allow_headers": ["Authorization", "Content-Type"],
-        "expose_headers": ["Content-Length"],
-        "allow_private_network_access": false
-      }
-    }
-  },
-
-  "auth": [],
-
-  "graceful_shutdown": {
-    "total_time": "10s",
-    "handlers_time": "8s"
-  },
-
-  "metrics": {
-    "type": "prometheus",
-    "remote_write": []
-  },
-
-  "tracing": {
-    "type": "encore"
   }
 }
-
