@@ -1,0 +1,20 @@
+# Docker Compose override for local development
+# Use with: docker-compose -f docker-compose.yml -f docker-compose.dev.yml up
+
+version: '3.8'
+
+services:
+  # Override backend to build locally instead of using pre-built image
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    image: mediavault-backend:local
+    volumes:
+      # Mount source code for development (optional - requires rebuild)
+      # - ./backend:/app/src:ro
+    environment:
+      # Development-specific settings
+      ENCORE_ENVIRONMENT: development
+      LOG_LEVEL: debug
+

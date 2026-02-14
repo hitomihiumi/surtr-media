@@ -1,0 +1,157 @@
+version: '3.8'
+
+services:
+  # MediaVault Backend (Encore App)
+  backend:
+    image: ghcr.io/hitomihiumi/surtr-media/mediavault-backend:${BACKEND_VERSION:-latest}
+    container_name: mediavault-backend
+    ports:
+      - "4000:4000"
+    environment:
+      # Database Configuration
+      POSTGRES_HOST: postgres:5432
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+
+      # S3/MinIO Configuration
+      S3_ENDPOINT: minio:9000
+      S3_ACCESS_KEY: ${MINIO_ROOT_USER:-minioadmin}
+      S3_SECRET_KEY: ${MINIO_ROOT_PASSWORD:-minioadmin}
+      S3_BUCKET: media-vault
+      S3_USE_SSL: "false"
+
+      # Discord OAuth
+      DISCORD_CLIENT_ID: ${DISCORD_CLIENT_ID}
+      DISCORD_CLIENT_SECRET: ${DISCORD_CLIENT_SECRET}
+      DISCORD_REDIRECT_URL: ${DISCORD_REDIRECT_URL:-http://localhost:4000/auth/discord/callback}
+
+      # Session
+      SESSION_SECRET: ${SESSION_SECRET:-change-me-in-production}
+
+      # API Configuration
+      API_BASE_URL: ${API_BASE_URL:-http://localhost:4000}
+      FRONTEND_URL: ${FRONTEND_URL:-http://localhost:3000}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+      minio-init:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:4000/healthz"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    restart: unless-stopped
+    networks:
+      - mediavault-network
+
+  # PostgreSQL Database
+  postgres:
+    image: postgres:16-alpine
+    container_name: mediavault-postgres
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_MULTIPLE_DATABASES: mediavault_auth,mediavault_media,mediavault_collection,mediavault_processing
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./scripts/init-multiple-dbs.sh:/docker-entrypoint-initdb.d/init-multiple-dbs.sh:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+    networks:
+      - mediavault-network
+
+  # MinIO Object Storage
+  minio:
+    image: minio/minio:latest
+    container_name: mediavault-minio
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin}
+    volumes:
+      - minio_data:/data
+    command: server /data --console-address ":9001"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 30s
+      timeout: 20s
+      retries: 3
+    restart: unless-stopped
+    networks:
+      - mediavault-network
+
+  # MinIO client to create bucket on startup
+  minio-init:
+    image: minio/mc:latest
+    container_name: mediavault-minio-init
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint: >
+      /bin/sh -c "
+      sleep 5;
+      mc alias set myminio http://minio:9000 $${MINIO_ROOT_USER:-minioadmin} $${MINIO_ROOT_PASSWORD:-minioadmin};
+      mc mb --ignore-existing myminio/media-vault;
+      mc anonymous set download myminio/media-vault/public;
+      exit 0;
+      "
+    networks:
+      - mediavault-network
+
+  # NSQ for local Pub/Sub (used by Encore in self-hosted mode)
+  nsqlookupd:
+    image: nsqio/nsq:latest
+    container_name: mediavault-nsqlookupd
+    command: /nsqlookupd
+    ports:
+      - "4160:4160"
+      - "4161:4161"
+    restart: unless-stopped
+    networks:
+      - mediavault-network
+
+  nsqd:
+    image: nsqio/nsq:latest
+    container_name: mediavault-nsqd
+    command: /nsqd --lookupd-tcp-address=nsqlookupd:4160 --broadcast-address=nsqd
+    depends_on:
+      - nsqlookupd
+    ports:
+      - "4150:4150"
+      - "4151:4151"
+    restart: unless-stopped
+    networks:
+      - mediavault-network
+
+  nsqadmin:
+    image: nsqio/nsq:latest
+    container_name: mediavault-nsqadmin
+    command: /nsqadmin --lookupd-http-address=nsqlookupd:4161
+    depends_on:
+      - nsqlookupd
+    ports:
+      - "4171:4171"
+    restart: unless-stopped
+    networks:
+      - mediavault-network
+
+networks:
+  mediavault-network:
+    driver: bridge
+
+volumes:
+  minio_data:
+  postgres_data:
+

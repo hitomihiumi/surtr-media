@@ -1,0 +1,48 @@
+# Docker ignore file for backend build context
+
+# Git
+.git
+.gitignore
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Build artifacts
+*.exe
+*.dll
+*.so
+*.dylib
+
+# Test files
+*_test.go
+*.test
+
+# Encore local files
+.encore/
+encore.gen.go
+
+# Logs
+*.log
+
+# Temporary files
+tmp/
+temp/
+
+# Environment files (secrets)
+.env
+.env.local
+.env.production
+
+# Documentation
+*.md
+!README.md
+
+# CI/CD
+.github/
+
+# Frontend (not needed in backend image)
+../frontend/
+
