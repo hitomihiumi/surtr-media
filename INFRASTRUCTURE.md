@@ -113,10 +113,9 @@ docker-compose -f docker-compose.yml -f docker-compose.dev.yml up --build
 
 ### Infrastructure Configuration
 
-Encore infrastructure is configured via JSON files in `backend/infra/`:
+Encore infrastructure is configured via JSON files in `backend/`:
 
-- `local.infra.json` - Local development
-- `production.infra.json` - Production deployment
+- `infra-config.json` - Production deployment
 
 ### Self-Hosted Deployment
 
