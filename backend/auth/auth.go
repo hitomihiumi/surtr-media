@@ -10,23 +10,39 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"os"
 	"strings"
 	"time"
 
 	"encore.dev/beta/auth"
 	"encore.dev/beta/errs"
-	"encore.dev/config"
 	"encore.dev/rlog"
 	"encore.dev/storage/sqldb"
 )
 
-// Config for Discord OAuth2
-var cfg struct {
-	DiscordClientID     config.String
-	DiscordClientSecret config.String
-	DiscordRedirectURI  config.String
-	FrontendURL         config.String
-	SessionSecret       config.String
+// Secrets for Discord OAuth2 - loaded via Encore secrets
+var secrets struct {
+	DiscordClientID     string
+	DiscordClientSecret string
+	SessionSecret       string
+}
+
+// getEnvOrDefault returns the environment variable value or a default
+func getEnvOrDefault(key, defaultVal string) string {
+	if val := os.Getenv(key); val != "" {
+		return val
+	}
+	return defaultVal
+}
+
+// getDiscordRedirectURI returns the Discord OAuth redirect URI
+func getDiscordRedirectURI() string {
+	return getEnvOrDefault("DISCORD_REDIRECT_URI", "http://localhost:4000/auth/discord/callback")
+}
+
+// getFrontendURL returns the frontend URL for redirects
+func getFrontendURL() string {
+	return getEnvOrDefault("FRONTEND_URL", "http://localhost:3000")
 }
 
 // Database for users
@@ -70,8 +86,8 @@ func Login(ctx context.Context) (*LoginResponse, error) {
 	state := generateRandomState()
 
 	params := url.Values{
-		"client_id":     {cfg.DiscordClientID()},
-		"redirect_uri":  {cfg.DiscordRedirectURI()},
+		"client_id":     {secrets.DiscordClientID},
+		"redirect_uri":  {getDiscordRedirectURI()},
 		"response_type": {"code"},
 		"scope":         {"identify"},
 		"state":         {state},
@@ -134,7 +150,7 @@ func Callback(ctx context.Context, req *CallbackRequest) (*CallbackResponse, err
 
 	return &CallbackResponse{
 		Token:       sessionToken,
-		RedirectURL: cfg.FrontendURL(),
+		RedirectURL: getFrontendURL(),
 	}, nil
 }
 
@@ -227,11 +243,11 @@ type tokenResponse struct {
 
 func exchangeCodeForToken(ctx context.Context, code string) (*tokenResponse, error) {
 	data := url.Values{
-		"client_id":     {cfg.DiscordClientID()},
-		"client_secret": {cfg.DiscordClientSecret()},
+		"client_id":     {secrets.DiscordClientID},
+		"client_secret": {secrets.DiscordClientSecret},
 		"grant_type":    {"authorization_code"},
 		"code":          {code},
-		"redirect_uri":  {cfg.DiscordRedirectURI()},
+		"redirect_uri":  {getDiscordRedirectURI()},
 	}
 
 	req, err := http.NewRequestWithContext(ctx, "POST", "https://discord.com/api/oauth2/token", strings.NewReader(data.Encode()))
