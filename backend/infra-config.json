@@ -6,56 +6,49 @@
     "env_type": "production",
     "cloud": "custom"
   },
-
   "sql_servers": [
     {
-      "host": "postgres:5432"
+      "host": "postgres:5432",
+      "databases": {
+        "auth": {
+          "name": "mediavault_auth",
+          "username": "postgres",
+          "password": {"$env": "POSTGRES_PASSWORD"}
+        },
+        "media": {
+          "name": "mediavault_media",
+          "username": "postgres",
+          "password": {"$env": "POSTGRES_PASSWORD"}
+        },
+        "collection": {
+          "name": "mediavault_collection",
+          "username": "postgres",
+          "password": {"$env": "POSTGRES_PASSWORD"}
+        },
+        "processing": {
+          "name": "mediavault_processing",
+          "username": "postgres",
+          "password": {"$env": "POSTGRES_PASSWORD"}
+        }
+      }
     }
   ],
-
-  "sql_databases": {
-    "auth": {
-      "server_id": 0,
-      "database": "mediavault_auth",
-      "username": {"$env": "POSTGRES_USER"},
-      "password": {"$env": "POSTGRES_PASSWORD"}
-    },
-    "media": {
-      "server_id": 0,
-      "database": "mediavault_media",
-      "username": {"$env": "POSTGRES_USER"},
-      "password": {"$env": "POSTGRES_PASSWORD"}
-    },
-    "collection": {
-      "server_id": 0,
-      "database": "mediavault_collection",
-      "username": {"$env": "POSTGRES_USER"},
-      "password": {"$env": "POSTGRES_PASSWORD"}
-    },
-    "processing": {
-      "server_id": 0,
-      "database": "mediavault_processing",
-      "username": {"$env": "POSTGRES_USER"},
-      "password": {"$env": "POSTGRES_PASSWORD"}
-    }
-  },
-
   "pubsub": [
     {
       "type": "nsq",
-      "hosts": "nsqd:4150"
-    }
-  ],
-
-  "pubsub_topics": {
-    "media-uploaded": {
-      "provider_id": 0,
-      "subscriptions": {
-        "processing-worker": {}
+      "hosts": "nsqd:4150",
+      "topics": {
+        "media-uploaded": {
+          "name": "media-uploaded",
+          "subscriptions": {
+            "processing-worker": {
+              "name": "processing-worker"
+            }
+          }
+        }
       }
     }
-  },
-
+  ],
   "secrets": {
     "DiscordClientID": {"$env": "DISCORD_CLIENT_ID"},
     "DiscordClientSecret": {"$env": "DISCORD_CLIENT_SECRET"},
