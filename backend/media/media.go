@@ -4,11 +4,11 @@ package media
 import (
 	"context"
 	"fmt"
+	"os"
 	"time"
 
 	"encore.dev/beta/auth"
 	"encore.dev/beta/errs"
-	"encore.dev/config"
 	"encore.dev/pubsub"
 	"encore.dev/rlog"
 	"encore.dev/storage/sqldb"
@@ -19,13 +19,31 @@ import (
 	authpkg "encore.app/auth"
 )
 
-// Config for S3/MinIO
-var cfg struct {
-	S3Endpoint  config.String
-	S3AccessKey config.String
-	S3SecretKey config.String
-	S3Bucket    config.String
-	S3UseSSL    config.Bool
+// Secrets for S3/MinIO
+var secrets struct {
+	S3AccessKey string
+	S3SecretKey string
+}
+
+// getS3Endpoint returns the S3 endpoint
+func getS3Endpoint() string {
+	if val := os.Getenv("S3_ENDPOINT"); val != "" {
+		return val
+	}
+	return "localhost:9000"
+}
+
+// getS3Bucket returns the S3 bucket name
+func getS3Bucket() string {
+	if val := os.Getenv("S3_BUCKET"); val != "" {
+		return val
+	}
+	return "media-vault"
+}
+
+// getS3UseSSL returns whether to use SSL for S3
+func getS3UseSSL() bool {
+	return os.Getenv("S3_USE_SSL") == "true"
 }
 
 // Database for media
@@ -47,9 +65,9 @@ var MediaUploadedTopic = pubsub.NewTopic[*MediaUploaded]("media-uploaded", pubsu
 
 // getMinioClient creates a MinIO client
 func getMinioClient() (*minio.Client, error) {
-	return minio.New(cfg.S3Endpoint(), &minio.Options{
-		Creds:  credentials.NewStaticV4(cfg.S3AccessKey(), cfg.S3SecretKey(), ""),
-		Secure: cfg.S3UseSSL(),
+	return minio.New(getS3Endpoint(), &minio.Options{
+		Creds:  credentials.NewStaticV4(secrets.S3AccessKey, secrets.S3SecretKey, ""),
+		Secure: getS3UseSSL(),
 	})
 }
 
@@ -88,7 +106,7 @@ func SignUpload(ctx context.Context, req *SignUploadRequest) (*SignUploadRespons
 	}
 
 	// Generate presigned URL (valid for 15 minutes)
-	presignedURL, err := client.PresignedPutObject(ctx, cfg.S3Bucket(), s3Key, 15*time.Minute)
+	presignedURL, err := client.PresignedPutObject(ctx, getS3Bucket(), s3Key, 15*time.Minute)
 	if err != nil {
 		rlog.Error("failed to generate presigned URL", "error", err)
 		return nil, errs.B().Code(errs.Internal).Msg("failed to generate upload URL").Err()
@@ -468,7 +486,7 @@ func GetMedia(ctx context.Context, id string) (*GetMediaResponse, error) {
 			if s3Key == "" {
 				s3Key = s3KeyOriginal
 			}
-			streamURL, err := client.PresignedGetObject(ctx, cfg.S3Bucket(), s3Key, 4*time.Hour, nil)
+			streamURL, err := client.PresignedGetObject(ctx, getS3Bucket(), s3Key, 4*time.Hour, nil)
 			if err == nil {
 				resp.StreamURL = streamURL.String()
 			}
@@ -508,9 +526,9 @@ func DeleteMedia(ctx context.Context, id string) (*DeleteMediaResponse, error) {
 	// Delete from S3
 	client, err := getMinioClient()
 	if err == nil {
-		_ = client.RemoveObject(ctx, cfg.S3Bucket(), s3KeyOriginal, minio.RemoveObjectOptions{})
+		_ = client.RemoveObject(ctx, getS3Bucket(), s3KeyOriginal, minio.RemoveObjectOptions{})
 		if s3KeyProcessed != "" {
-			_ = client.RemoveObject(ctx, cfg.S3Bucket(), s3KeyProcessed, minio.RemoveObjectOptions{})
+			_ = client.RemoveObject(ctx, getS3Bucket(), s3KeyProcessed, minio.RemoveObjectOptions{})
 		}
 	}
 

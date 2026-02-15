@@ -3,11 +3,11 @@ package collection
 
 import (
 	"context"
+	"os"
 	"time"
 
 	"encore.dev/beta/auth"
 	"encore.dev/beta/errs"
-	"encore.dev/config"
 	"encore.dev/storage/sqldb"
 	"github.com/google/uuid"
 	"github.com/minio/minio-go/v7"
@@ -16,13 +16,31 @@ import (
 	authpkg "encore.app/auth"
 )
 
-// Config for S3/MinIO (for generating stream URLs)
-var cfg struct {
-	S3Endpoint  config.String
-	S3AccessKey config.String
-	S3SecretKey config.String
-	S3Bucket    config.String
-	S3UseSSL    config.Bool
+// Secrets for S3/MinIO (for generating stream URLs)
+var secrets struct {
+	S3AccessKey string
+	S3SecretKey string
+}
+
+// getS3Endpoint returns the S3 endpoint
+func getS3Endpoint() string {
+	if val := os.Getenv("S3_ENDPOINT"); val != "" {
+		return val
+	}
+	return "localhost:9000"
+}
+
+// getS3Bucket returns the S3 bucket name
+func getS3Bucket() string {
+	if val := os.Getenv("S3_BUCKET"); val != "" {
+		return val
+	}
+	return "media-vault"
+}
+
+// getS3UseSSL returns whether to use SSL for S3
+func getS3UseSSL() bool {
+	return os.Getenv("S3_USE_SSL") == "true"
 }
 
 // Database for collections
@@ -35,9 +53,9 @@ var mediaDB = sqldb.Named("media")
 
 // getMinioClient creates a MinIO client
 func getMinioClient() (*minio.Client, error) {
-	return minio.New(cfg.S3Endpoint(), &minio.Options{
-		Creds:  credentials.NewStaticV4(cfg.S3AccessKey(), cfg.S3SecretKey(), ""),
-		Secure: cfg.S3UseSSL(),
+	return minio.New(getS3Endpoint(), &minio.Options{
+		Creds:  credentials.NewStaticV4(secrets.S3AccessKey, secrets.S3SecretKey, ""),
+		Secure: getS3UseSSL(),
 	})
 }
 
@@ -336,7 +354,7 @@ func GetCollection(ctx context.Context, id string, req *GetCollectionRequest) (*
 			if s3Key == "" {
 				s3Key = s3KeyOriginal
 			}
-			streamURL, err := client.PresignedGetObject(ctx, cfg.S3Bucket(), s3Key, 4*time.Hour, nil)
+			streamURL, err := client.PresignedGetObject(ctx, getS3Bucket(), s3Key, 4*time.Hour, nil)
 			if err == nil {
 				item.StreamURL = streamURL.String()
 			}

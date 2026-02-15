@@ -10,7 +10,6 @@ import (
 	"path/filepath"
 	"strings"
 
-	"encore.dev/config"
 	"encore.dev/pubsub"
 	"encore.dev/rlog"
 	"encore.dev/storage/sqldb"
@@ -20,13 +19,31 @@ import (
 	"encore.app/media"
 )
 
-// Config for S3/MinIO
-var cfg struct {
-	S3Endpoint  config.String
-	S3AccessKey config.String
-	S3SecretKey config.String
-	S3Bucket    config.String
-	S3UseSSL    config.Bool
+// Secrets for S3/MinIO
+var secrets struct {
+	S3AccessKey string
+	S3SecretKey string
+}
+
+// getS3Endpoint returns the S3 endpoint
+func getS3Endpoint() string {
+	if val := os.Getenv("S3_ENDPOINT"); val != "" {
+		return val
+	}
+	return "localhost:9000"
+}
+
+// getS3Bucket returns the S3 bucket name
+func getS3Bucket() string {
+	if val := os.Getenv("S3_BUCKET"); val != "" {
+		return val
+	}
+	return "media-vault"
+}
+
+// getS3UseSSL returns whether to use SSL for S3
+func getS3UseSSL() bool {
+	return os.Getenv("S3_USE_SSL") == "true"
 }
 
 // Database for processing jobs
@@ -39,9 +56,9 @@ var mediaDB = sqldb.Named("media")
 
 // getMinioClient creates a MinIO client
 func getMinioClient() (*minio.Client, error) {
-	return minio.New(cfg.S3Endpoint(), &minio.Options{
-		Creds:  credentials.NewStaticV4(cfg.S3AccessKey(), cfg.S3SecretKey(), ""),
-		Secure: cfg.S3UseSSL(),
+	return minio.New(getS3Endpoint(), &minio.Options{
+		Creds:  credentials.NewStaticV4(secrets.S3AccessKey, secrets.S3SecretKey, ""),
+		Secure: getS3UseSSL(),
 	})
 }
 
@@ -129,7 +146,7 @@ func transcodeVideo(ctx context.Context, mediaID, s3Key string) (string, error) 
 
 	// Download original file
 	inputPath := filepath.Join(tempDir, "input"+filepath.Ext(s3Key))
-	object, err := client.GetObject(ctx, cfg.S3Bucket(), s3Key, minio.GetObjectOptions{})
+	object, err := client.GetObject(ctx, getS3Bucket(), s3Key, minio.GetObjectOptions{})
 	if err != nil {
 		return "", fmt.Errorf("failed to get object from S3: %w", err)
 	}
@@ -196,7 +213,7 @@ func transcodeVideo(ctx context.Context, mediaID, s3Key string) (string, error) 
 		return "", fmt.Errorf("failed to stat output file: %w", err)
 	}
 
-	_, err = client.PutObject(ctx, cfg.S3Bucket(), processedKey, outputFile, stat.Size(),
+	_, err = client.PutObject(ctx, getS3Bucket(), processedKey, outputFile, stat.Size(),
 		minio.PutObjectOptions{ContentType: "video/mp4"})
 	if err != nil {
 		return "", fmt.Errorf("failed to upload processed file: %w", err)

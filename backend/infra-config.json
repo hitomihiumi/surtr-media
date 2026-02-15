@@ -52,6 +52,10 @@
   "secrets": {
     "DiscordClientID": {"$env": "DISCORD_CLIENT_ID"},
     "DiscordClientSecret": {"$env": "DISCORD_CLIENT_SECRET"},
-    "SessionSecret": {"$env": "SESSION_SECRET"}
+    "SessionSecret": {"$env": "SESSION_SECRET"},
+    "DiscordRedirectURI": {"$env": "DISCORD_REDIRECT_URI"},
+    "FrontendURL": {"$env": "FRONTEND_URL"},
+    "S3AccessKey": {"$env": "S3_ACCESS_KEY"},
+    "S3SecretKey": {"$env": "S3_SECRET_KEY"}
   }
 }
