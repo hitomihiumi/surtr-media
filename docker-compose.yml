@@ -5,9 +5,19 @@ services:
   backend:
     image: ghcr.io/hitomihiumi/surtr-media/mediavault-backend:${BACKEND_VERSION:-latest}
     container_name: mediavault-backend
+    env_file:
+      - .env
     ports:
       - "4000:4000"
     environment:
+      # Encore Runtime Configuration
+      # Listen on all interfaces to accept external requests
+      ENCORE_LISTEN_ADDR: "0.0.0.0:4000"
+      # Allow CORS from any origin (adjust for production)
+      ENCORE_CORS_ALLOWED_ORIGINS: "*"
+      # Allow requests from external hosts
+      ENCORE_CORS_ALLOW_CREDENTIALS: "true"
+
       # Database Configuration
       POSTGRES_HOST: postgres:5432
       POSTGRES_USER: postgres
@@ -23,7 +33,7 @@ services:
       # Discord OAuth
       DISCORD_CLIENT_ID: ${DISCORD_CLIENT_ID}
       DISCORD_CLIENT_SECRET: ${DISCORD_CLIENT_SECRET}
-      DISCORD_REDIRECT_URL: ${DISCORD_REDIRECT_URL:-http://localhost:4000/auth/discord/callback}
+      DISCORD_REDIRECT_URI: ${DISCORD_REDIRECT_URI:-http://localhost:4000/auth/discord/callback}
 
       # Session
       SESSION_SECRET: ${SESSION_SECRET:-change-me-in-production}
@@ -31,6 +41,10 @@ services:
       # API Configuration
       API_BASE_URL: ${API_BASE_URL:-http://localhost:4000}
       FRONTEND_URL: ${FRONTEND_URL:-http://localhost:3000}
+
+      # NSQ Pub/Sub Configuration
+      NSQ_HOST: nsqd:4150
+      NSQLOOKUPD_HOST: nsqlookupd:4161
     depends_on:
       postgres:
         condition: service_healthy
@@ -38,6 +52,8 @@ services:
         condition: service_healthy
       minio-init:
         condition: service_completed_successfully
+      nsqd:
+        condition: service_started
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:4000/healthz"]
       interval: 30s

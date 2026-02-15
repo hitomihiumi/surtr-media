@@ -9,6 +9,9 @@
   "sql_servers": [
     {
       "host": "postgres:5432",
+      "tls_config": {
+        "disabled": true
+      },
       "databases": {
         "auth": {
           "name": "mediavault_auth",

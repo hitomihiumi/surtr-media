@@ -81,8 +81,8 @@ type LoginResponse struct {
 
 // Login redirects to Discord OAuth URL
 //
-//encore:api public method=GET path=/auth/discord/login
-func Login(ctx context.Context) (*LoginResponse, error) {
+//encore:api public raw method=GET path=/auth/discord/login
+func Login(w http.ResponseWriter, req *http.Request) {
 	state := generateRandomState()
 
 	params := url.Values{
@@ -95,7 +95,7 @@ func Login(ctx context.Context) (*LoginResponse, error) {
 
 	authURL := fmt.Sprintf("https://discord.com/api/oauth2/authorize?%s", params.Encode())
 
-	return &LoginResponse{URL: authURL}, nil
+	http.Redirect(w, req, authURL, http.StatusTemporaryRedirect)
 }
 
 // CallbackRequest contains the OAuth callback parameters
@@ -112,32 +112,51 @@ type CallbackResponse struct {
 
 // Callback handles the Discord OAuth callback
 //
-//encore:api public method=GET path=/auth/discord/callback
-func Callback(ctx context.Context, req *CallbackRequest) (*CallbackResponse, error) {
-	if req.Code == "" {
-		return nil, errs.B().Code(errs.InvalidArgument).Msg("missing authorization code").Err()
+//encore:api public raw method=GET path=/auth/discord/callback
+func Callback(w http.ResponseWriter, req *http.Request) {
+	ctx := req.Context()
+	code := req.URL.Query().Get("code")
+
+	if code == "" {
+		rlog.Error("callback: missing authorization code")
+		http.Error(w, "missing authorization code", http.StatusBadRequest)
+		return
 	}
 
 	// Exchange code for token
-	tokenData, err := exchangeCodeForToken(ctx, req.Code)
+	tokenData, err := exchangeCodeForToken(ctx, code)
 	if err != nil {
 		rlog.Error("failed to exchange code for token", "error", err)
-		return nil, errs.B().Code(errs.Internal).Msg("failed to authenticate with Discord").Err()
+		http.Error(w, "failed to authenticate with Discord", http.StatusInternalServerError)
+		return
 	}
 
 	// Get user info from Discord
 	discordUser, err := getDiscordUser(ctx, tokenData.AccessToken)
 	if err != nil {
 		rlog.Error("failed to get Discord user", "error", err)
-		return nil, errs.B().Code(errs.Internal).Msg("failed to get user info from Discord").Err()
+		http.Error(w, "failed to get user info from Discord", http.StatusInternalServerError)
+		return
 	}
+
+	rlog.Info("Discord user retrieved",
+		"discord_id", discordUser.ID,
+		"username", discordUser.Username,
+	)
 
 	// Upsert user in database
 	user, err := upsertUser(ctx, discordUser)
 	if err != nil {
-		rlog.Error("failed to upsert user", "error", err)
-		return nil, errs.B().Code(errs.Internal).Msg("failed to create user").Err()
+		rlog.Error("failed to upsert user",
+			"error", err,
+			"discord_id", discordUser.ID,
+			"username", discordUser.Username,
+		)
+		http.Error(w, "failed to create user: "+err.Error(), http.StatusInternalServerError)
+		return
 	}
+
+	rlog.Info("User upserted successfully", "user_id", user.ID)
 
 	// Create session
 	sessionToken := generateSessionToken()
@@ -148,10 +167,11 @@ func Callback(ctx context.Context, req *CallbackRequest) (*CallbackResponse, err
 	}
 	sessions[sessionToken] = session
 
-	return &CallbackResponse{
-		Token:       sessionToken,
-		RedirectURL: getFrontendURL(),
-	}, nil
+	// Redirect to frontend with token
+	frontendURL := getFrontendURL()
+	redirectURL := fmt.Sprintf("%s/auth/callback?token=%s", frontendURL, sessionToken)
+
+	http.Redirect(w, req, redirectURL, http.StatusTemporaryRedirect)
 }
 
 // LogoutResponse confirms logout
@@ -216,6 +236,12 @@ func upsertUser(ctx context.Context, discordUser *DiscordUser) (*User, error) {
 		avatarURL = fmt.Sprintf("https://cdn.discordapp.com/avatars/%s/%s.png", discordUser.ID, discordUser.Avatar)
 	}
 
+	rlog.Info("upserting user",
+		"discord_id", discordUser.ID,
+		"username", discordUser.Username,
+		"avatar_url", avatarURL,
+	)
+
 	var user User
 	err := db.QueryRow(ctx, `
 		INSERT INTO users (discord_id, username, avatar_url, created_at)
@@ -227,7 +253,11 @@ func upsertUser(ctx context.Context, discordUser *DiscordUser) (*User, error) {
 	`, discordUser.ID, discordUser.Username, avatarURL).Scan(&user.ID, &user.DiscordID, &user.Username, &user.AvatarURL)
 
 	if err != nil {
-		return nil, err
+		rlog.Error("database error in upsertUser",
+			"error", err.Error(),
+			"discord_id", discordUser.ID,
+		)
+		return nil, fmt.Errorf("database upsert failed: %w", err)
 	}
 
 	return &user, nil

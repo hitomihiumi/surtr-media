@@ -28,6 +28,7 @@ data/
 # Build outputs
 dist/
 build/
+.next/
 
 # Node modules (frontend)
 node_modules/
@@ -39,3 +40,4 @@ node_modules/
 *.so
 *.dylib
 
+/frontend/next-env.d.ts
